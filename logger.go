@@ -21,10 +21,55 @@ var (
 	once         sync.Once
 )
 
-// Init initializes the global zap logger. Call this early in main().
-func Init() {
+// Init initializes the global zap logger. Pass a *zap.Config to override all options, or nil to use env/defaults.
+// mergeEncoderConfig merges user-provided EncoderConfig into the default.
+func mergeEncoderConfig(def, user zapcore.EncoderConfig) zapcore.EncoderConfig {
+	if user.LevelKey != "" {
+		def.LevelKey = user.LevelKey
+	}
+	if user.TimeKey != "" {
+		def.TimeKey = user.TimeKey
+	}
+	if user.MessageKey != "" {
+		def.MessageKey = user.MessageKey
+	}
+	if user.EncodeTime != nil {
+		def.EncodeTime = user.EncodeTime
+	}
+	if user.EncodeLevel != nil {
+		def.EncodeLevel = user.EncodeLevel
+	}
+	if user.EncodeCaller != nil {
+		def.EncodeCaller = user.EncodeCaller
+	}
+	// Add more fields as needed
+	return def
+}
+
+// mergeZapConfig merges user-provided zap.Config into the default.
+func mergeZapConfig(def, user zap.Config) zap.Config {
+	if len(user.OutputPaths) > 0 {
+		def.OutputPaths = user.OutputPaths
+	}
+	if user.Level.Level() != 0 {
+		def.Level = user.Level
+	}
+	if user.Encoding != "" {
+		def.Encoding = user.Encoding
+	}
+	def.EncoderConfig = mergeEncoderConfig(def.EncoderConfig, user.EncoderConfig)
+	// Add more fields as needed
+	return def
+}
+
+func Init(cnf ...*zap.Config) {
+	var userCfg *zap.Config
+	if len(cnf) > 0 {
+		userCfg = cnf[0]
+	}
+
 	once.Do(func() {
-		cfg := zap.Config{
+		defCfg := zap.Config{
 			OutputPaths: []string{getOutput()},
 			Level:       zap.NewAtomicLevelAt(getLevel()),
 			Encoding:    "json",
@@ -37,8 +82,11 @@ func Init() {
 				EncodeCaller: zapcore.ShortCallerEncoder,
 			},
 		}
+		if userCfg != nil {
+			defCfg = mergeZapConfig(defCfg, *userCfg)
+		}
 		var err error
-		globalLogger, err = cfg.Build()
+		globalLogger, err = defCfg.Build()
 		if err != nil {
 			panic(fmt.Sprintf("failed to initialize logger: %v", err))
 		}
