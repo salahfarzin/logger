@@ -20,7 +20,14 @@ var (
 	globalLogger *zap.Logger
 	globalSyncer *dailyRotateSyncer
 	once         sync.Once
+	logDir       = "logs" // directory used by the daily rotator; override with SetLogDir before Init
 )
+
+// SetLogDir sets the directory where daily-rotating log files are written.
+// Must be called before Init. Has no effect after Init has been called.
+func SetLogDir(dir string) {
+	logDir = dir
+}
 
 // dailyRotateSyncer is a zapcore.WriteSyncer that rotates the log file at
 // midnight. On the first Write after the calendar date changes the old file is
@@ -164,22 +171,17 @@ func Init(cnf ...*zap.Config) {
 }
 
 // buildWriteSyncer returns a WriteSyncer based on the LOG_PATH env var.
-// If LOG_PATH is set, it opens that file once (no rotation).
-// Otherwise it creates a dailyRotateSyncer writing to logs/YYYY-MM-DD.log.
+// If LOG_PATH is set, it is always treated as a rotation directory.
+// Otherwise it creates a dailyRotateSyncer writing to logDir/YYYY-MM-DD.log.
 func buildWriteSyncer() zapcore.WriteSyncer {
 	if staticPath := strings.TrimSpace(os.Getenv(envLogPath)); staticPath != "" {
-		f, err := os.OpenFile(staticPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
-		if err != nil {
-			panic(fmt.Sprintf("logger: open %s: %v", staticPath, err))
-		}
-		return zapcore.AddSync(f)
+		logDir = staticPath
 	}
 
-	logsDir := "logs"
-	if err := os.MkdirAll(logsDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0755); err != nil {
 		return zapcore.AddSync(os.Stdout)
 	}
-	s, err := newDailyRotateSyncer(logsDir)
+	s, err := newDailyRotateSyncer(logDir)
 	if err != nil {
 		panic(fmt.Sprintf("logger: create daily rotator: %v", err))
 	}
