@@ -1,0 +1,122 @@
+---
+name: CI
+
+# Adapted from the auth service's CI. This is a library: no database,
+# migrations or binary, so there's no migration-check job and "build" is a
+# compile check of every package instead of a release binary.
+
+on:
+  push:
+    branches: [main, master, dev, 'feature/**', '[0-9]*-*']
+    tags: ['v*']
+  pull_request:
+    branches: [main, master, dev]
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Quality: formatting · static analysis · linting
+  # ──────────────────────────────────────────────────────────────────────────
+  quality:
+    name: Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Check formatting (gofmt)
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "❌ Formatting issues found:"
+            gofmt -l .
+            echo "Run 'gofmt -w .' to fix"
+            exit 1
+          fi
+          echo "✅ gofmt OK"
+
+      - name: Static analysis (go vet)
+        run: go vet ./...
+
+      - name: Lint (golangci-lint)
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+          golangci-lint run --timeout=5m
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. Tests & Coverage — requires quality checks to pass
+  # ──────────────────────────────────────────────────────────────────────────
+  test:
+    name: Tests & Coverage
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Prepare directories
+        run: mkdir -p coverage
+
+      - name: Run tests with coverage
+        run: |
+          go test -v -race \
+            -covermode=atomic \
+            -coverprofile=coverage/coverage.out \
+            ./...
+
+      - name: Coverage report
+        run: |
+          COVERAGE=$(go tool cover -func=coverage/coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: ${COVERAGE}%"
+          echo "coverage=${COVERAGE}" >> "$GITHUB_ENV"
+          go tool cover -html=coverage/coverage.out -o coverage/coverage.html
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage/coverage.out
+          flags: unittests
+          fail_ci_if_error: false
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. Build — compile every package (library: no binary to publish)
+  # ──────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build -v ./...
