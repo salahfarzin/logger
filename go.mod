@@ -1,6 +1,6 @@
 module github.com/salahfarzin/logger
 
-go 1.25.1
+go 1.27.1
 
 require go.uber.org/zap v1.27.1
 

@@ -112,6 +112,12 @@ func mergeEncoderConfig(def, user zapcore.EncoderConfig) zapcore.EncoderConfig {
 	if user.MessageKey != "" {
 		def.MessageKey = user.MessageKey
 	}
+	if user.CallerKey != "" {
+		def.CallerKey = user.CallerKey
+	}
+	if user.FunctionKey != "" {
+		def.FunctionKey = user.FunctionKey
+	}
 	if user.EncodeTime != nil {
 		def.EncodeTime = user.EncodeTime
 	}
@@ -124,6 +130,22 @@ func mergeEncoderConfig(def, user zapcore.EncoderConfig) zapcore.EncoderConfig {
 	return def
 }
 
+// defaultEncoderConfig is the encoder config Init starts from. CallerKey and
+// FunctionKey must be set: zap.AddCaller() only reaches the output when they
+// are, otherwise every entry silently drops its file:line and function.
+func defaultEncoderConfig() zapcore.EncoderConfig {
+	return zapcore.EncoderConfig{
+		LevelKey:     "level",
+		TimeKey:      "time",
+		MessageKey:   "msg",
+		CallerKey:    "caller",
+		FunctionKey:  "func",
+		EncodeTime:   zapcore.ISO8601TimeEncoder,
+		EncodeLevel:  zapcore.LowercaseLevelEncoder,
+		EncodeCaller: zapcore.ShortCallerEncoder,
+	}
+}
+
 // Init initializes the global zap logger. Pass a *zap.Config to override
 // encoding, level, or encoder fields. Output paths in the config are ignored —
 // use the LOG_PATH env var to write to a fixed file instead of rotating files.
@@ -134,14 +156,7 @@ func Init(cnf ...*zap.Config) {
 	}
 
 	once.Do(func() {
-		encoderCfg := zapcore.EncoderConfig{
-			LevelKey:     "level",
-			TimeKey:      "time",
-			MessageKey:   "msg",
-			EncodeTime:   zapcore.ISO8601TimeEncoder,
-			EncodeLevel:  zapcore.LowercaseLevelEncoder,
-			EncodeCaller: zapcore.ShortCallerEncoder,
-		}
+		encoderCfg := defaultEncoderConfig()
 
 		level := getLevel()
 		encoding := "json"
